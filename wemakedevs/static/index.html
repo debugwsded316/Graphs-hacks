@@ -1,0 +1,1949 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Polypharmacy Guardian — Deterministic Clinical Triage & Knowledge Graph</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Vis.js Network CDN with CDNJS fallback -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js" onerror="this.onerror=null;this.src='https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js';"></script>
+
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdf4',
+              100: '#dcfce7',
+              500: '#22c55e',
+              600: '#16a34a',
+              700: '#15803d',
+              900: '#14532d',
+            },
+            slate: {
+              850: '#131b2e',
+              900: '#0b1120',
+              950: '#070b14',
+            }
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            'glow-red': 'glowRed 2s ease-in-out infinite alternate',
+          },
+          keyframes: {
+            glowRed: {
+              '0%': { boxShadow: '0 0 10px rgba(239, 68, 68, 0.3)' },
+              '100%': { boxShadow: '0 0 25px rgba(239, 68, 68, 0.7)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom scrollbar for clinical panels */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0b1120;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    .vis-network:focus {
+      outline: none;
+    }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+    }
+    .glass-card {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(71, 85, 105, 0.4);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-cyan-500 selection:text-white">
+
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header class="border-b border-slate-800 bg-slate-900/95 backdrop-blur sticky top-0 z-40 px-5 py-3 shadow-lg">
+    <div class="max-w-[1920px] mx-auto flex flex-col xl:flex-row items-center justify-between gap-4">
+      
+      <!-- Brand & Badges -->
+      <div class="flex items-center gap-4">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-cyan-600 via-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-cyan-500/20 ring-1 ring-white/20">
+          <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">
+              POLYPHARMACY GUARDIAN
+            </h1>
+            <span class="px-2 py-0.5 text-[10px] font-semibold tracking-wider uppercase rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+              Clinical Graph RAG
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 flex items-center gap-2">
+            <span>Deterministic Clinical Decision Support</span>
+            <span>•</span>
+            <span class="text-slate-500">FalkorDB + rapidfuzz Engine</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Provenance & Engine Health Status -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="font-medium text-slate-200">FalkorDB:</span>
+          <span id="falkordbStatusText" class="text-emerald-400 font-mono">CONNECTED:6379</span>
+        </div>
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs text-slate-300">
+          <span class="text-indigo-400 font-mono font-medium">Index:</span>
+          <span id="indexedCountText" class="font-semibold text-slate-200">46 Drugs + 4 FDCs</span>
+        </div>
+        <div class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/40 text-[11px] text-slate-400">
+          <span class="text-slate-500">Citations:</span>
+          <span class="text-slate-300">Flockhart '24</span>
+          <span>•</span>
+          <span class="text-slate-300">Boustani '08</span>
+          <span>•</span>
+          <span class="text-slate-300">ISMP LASA</span>
+          <span>•</span>
+          <span class="text-slate-300">CDSCO FDCs</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= HERO CASE PRESETS BAR ================= -->
+    <div class="max-w-[1920px] mx-auto mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-2">
+      <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 mr-1 flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+        Hero Case Presets:
+      </span>
+
+      <!-- Preset 1 -->
+      <button onclick="loadHeroPreset(1)" class="group px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-red-950/40 border border-slate-700/70 hover:border-red-500/50 text-xs font-medium text-slate-300 hover:text-red-300 transition-all flex items-center gap-1.5 active:scale-95">
+        <span class="w-2 h-2 rounded-full bg-red-500"></span>
+        <span class="font-bold text-slate-200 group-hover:text-red-200">Case 1:</span>
+        <span>CYP2D6 Prodrug Blockade</span>
+        <span class="text-[10px] text-slate-400 group-hover:text-red-300 font-mono">[Fluoxetine + Codeine]</span>
+      </button>
+
+      <!-- Preset 2 -->
+      <button onclick="loadHeroPreset(2)" class="group px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-fuchsia-950/40 border border-slate-700/70 hover:border-fuchsia-500/50 text-xs font-medium text-slate-300 hover:text-fuchsia-300 transition-all flex items-center gap-1.5 active:scale-95">
+        <span class="w-2 h-2 rounded-full bg-fuchsia-500"></span>
+        <span class="font-bold text-slate-200 group-hover:text-fuchsia-200">Case 2:</span>
+        <span>Indian FDC Hidden ACB Stacking</span>
+        <span class="text-[10px] text-slate-400 group-hover:text-fuchsia-300 font-mono">[Solvin Cold + Amitriptyline + Oxybutynin]</span>
+      </button>
+
+      <!-- Preset 3 -->
+      <button onclick="loadHeroPreset(3)" class="group px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-rose-950/40 border border-slate-700/70 hover:border-rose-500/50 text-xs font-medium text-slate-300 hover:text-rose-300 transition-all flex items-center gap-1.5 active:scale-95">
+        <span class="w-2 h-2 rounded-full bg-rose-500"></span>
+        <span class="font-bold text-slate-200 group-hover:text-rose-200">Case 3:</span>
+        <span>CYP2C19 Antiplatelet Failure</span>
+        <span class="text-[10px] text-slate-400 group-hover:text-rose-300 font-mono">[Omeprazole + Clopidogrel]</span>
+      </button>
+
+      <!-- Preset 4 -->
+      <button onclick="loadHeroPreset(4)" class="group px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-amber-950/40 border border-slate-700/70 hover:border-amber-500/50 text-xs font-medium text-slate-300 hover:text-amber-300 transition-all flex items-center gap-1.5 active:scale-95">
+        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+        <span class="font-bold text-slate-200 group-hover:text-amber-200">Case 4:</span>
+        <span>ISMP LASA Near-Miss Guardrail</span>
+        <span class="text-[10px] text-slate-400 group-hover:text-amber-300 font-mono">[Hydralizine + Tramadol]</span>
+      </button>
+
+      <!-- Preset 5 -->
+      <button onclick="loadHeroPreset(5)" class="group px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-purple-950/40 border border-slate-700/70 hover:border-purple-500/50 text-xs font-medium text-slate-300 hover:text-purple-300 transition-all flex items-center gap-1.5 active:scale-95">
+        <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+        <span class="font-bold text-slate-200 group-hover:text-purple-200">Case 5:</span>
+        <span>Zero-Trust Unknown Drug</span>
+        <span class="text-[10px] text-slate-400 group-hover:text-purple-300 font-mono">[Lecanemab + Fluoxetine]</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= MAIN DASHBOARD BODY ================= -->
+  <main class="flex-1 max-w-[1920px] w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+    <!-- ================= LEFT COLUMN: REGIMEN INPUT & CLINICAL VERDICT ================= -->
+    <div class="lg:col-span-5 flex flex-col gap-6">
+      
+      <!-- Panel 1: Regimen Input Card -->
+      <div class="glass-panel rounded-2xl p-5 shadow-xl border border-slate-800">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+            </svg>
+            Patient Drug Regimen Input
+          </h2>
+          <button onclick="clearRegimen()" class="text-xs text-slate-400 hover:text-rose-400 transition-colors">
+            Clear Regimen
+          </button>
+        </div>
+
+        <!-- AI Clinical Note Copilot (Free-Text Input) -->
+        <div class="mb-4 p-3.5 rounded-xl bg-gradient-to-r from-cyan-950/40 via-blue-950/30 to-indigo-950/40 border border-cyan-500/30 shadow-inner">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-bold text-cyan-300 flex items-center gap-1.5 uppercase tracking-wider">
+              <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+              AI Clinical Note Copilot (Free-Text Input)
+            </span>
+            <button type="button" onclick="insertSampleClinicalNote()" class="text-[11px] font-semibold text-cyan-400 hover:text-cyan-200 bg-cyan-950/80 hover:bg-cyan-900/80 px-2.5 py-1 rounded-md border border-cyan-700/50 transition-colors flex items-center gap-1">
+              <span>📋 Paste Sample Note</span>
+            </button>
+          </div>
+          <div class="relative">
+            <textarea 
+              id="clinicalNoteInput" 
+              rows="2" 
+              placeholder="Paste unformatted clinical encounter note or EHR snippet (e.g. 72yo male prescribed Solvin Cold for rhinitis along with Amitriptyline 25mg and Oxybutynin 5mg)..." 
+              class="w-full bg-slate-900/90 text-xs text-slate-100 placeholder-slate-500 border border-slate-700/80 rounded-lg p-2.5 focus:outline-none focus:border-cyan-500 font-mono transition-colors resize-none"
+            ></textarea>
+          </div>
+          <div class="flex items-center justify-between mt-2">
+            <span class="text-[10px] text-slate-400">Zero-latency Clinical NLP extractor + LLM Fallback (100% Offline)</span>
+            <button type="button" onclick="runNoteTriage()" class="px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs shadow-md shadow-cyan-600/30 transition-all flex items-center gap-1.5">
+              <span>⚡ Analyze Clinical Note</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Drug Tag Container -->
+        <div class="min-h-[58px] p-2 bg-slate-900/90 rounded-xl border border-slate-700/80 focus-within:border-cyan-500 transition-colors flex flex-wrap items-center gap-2 mb-3" id="tagContainer">
+          <!-- Tags inserted dynamically -->
+          <input 
+            type="text" 
+            id="drugInput" 
+            placeholder="Or type drug / FDC brand name and press Enter..." 
+            class="flex-1 min-w-[180px] bg-transparent text-sm text-slate-100 placeholder-slate-500 focus:outline-none px-2 py-1"
+            onkeydown="handleInputKeydown(event)"
+          />
+        </div>
+
+        <!-- Quick Add Seed Chips -->
+        <div class="mb-4">
+          <div class="text-[11px] font-medium text-slate-400 mb-1.5 flex items-center justify-between">
+            <span>Clinical Domain Seeds (Click to add):</span>
+            <span class="text-slate-500">46 Verified Rx + 4 Indian FDCs</span>
+          </div>
+          <div class="flex flex-wrap gap-1.5" id="seedChipsContainer">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+
+        <!-- Action Button -->
+        <button 
+          id="btnRunTriage"
+          onclick="runTriage()" 
+          class="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:via-blue-500 hover:to-indigo-500 active:scale-[0.99] text-white font-semibold text-sm shadow-lg shadow-cyan-600/25 transition-all flex items-center justify-center gap-2 group"
+        >
+          <svg id="btnSpinner" class="hidden w-4 h-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+          </svg>
+          <svg class="w-4 h-4 group-hover:rotate-12 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+          </svg>
+          <span>Run Clinical Graph Triage</span>
+          <span class="text-xs text-cyan-200 font-mono ml-1 opacity-70">[Ctrl+Enter]</span>
+        </button>
+      </div>
+
+      <!-- Panel 2: Triage Verdict Banner -->
+      <div id="verdictCard" class="glass-panel rounded-2xl p-5 shadow-xl border border-slate-800">
+        <div class="flex items-center justify-between mb-4">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Deterministic Triage Verdict</span>
+          <div id="verdictBadge" class="px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 bg-slate-800 text-slate-300 border-slate-700">
+            <span>Awaiting Evaluation</span>
+          </div>
+        </div>
+
+        <!-- Ticket Alert Banner (when persisted) -->
+        <div id="ticketAlertBox" class="hidden mb-4 p-4 rounded-xl bg-red-950/60 border border-red-500/50 text-red-200 text-xs shadow-lg shadow-red-950/40">
+          <div class="flex items-center justify-between font-semibold mb-2">
+            <span class="flex items-center gap-1.5 text-red-400 font-bold">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/>
+              </svg>
+              FalkorDB Pharmacist Ticket Persisted
+            </span>
+            <span id="ticketStatusBadge" class="px-2.5 py-0.5 rounded-full bg-red-900 text-red-100 font-mono text-[10px] font-bold tracking-wider uppercase border border-red-700">PENDING_REVIEW</span>
+          </div>
+          <div class="flex items-center justify-between text-slate-300 font-mono mb-3">
+            <span>Ticket ID: <strong id="ticketIdText" class="text-white">TICK-XXXXXXXX</strong></span>
+            <button onclick="focusTicketNode()" class="text-[11px] underline text-red-400 hover:text-red-300 font-sans">
+              Highlight on Graph
+            </button>
+          </div>
+          <!-- Ticket Action Buttons -->
+          <div class="flex items-center gap-2 pt-2 border-t border-red-800/60">
+            <span class="text-[11px] text-slate-400 font-medium">Decision:</span>
+            <button type="button" id="btnApproveSwap" onclick="submitTicketDecision('APPROVED_SWAP')" class="px-3 py-1 rounded bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white font-semibold text-[11px] transition-all flex items-center gap-1 shadow-sm">
+              <span>✓ Approve Swap</span>
+            </button>
+            <button type="button" id="btnOverride" onclick="submitTicketDecision('OVERRIDDEN')" class="px-3 py-1 rounded bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-semibold text-[11px] border border-slate-600 transition-all flex items-center gap-1">
+              <span>⚠️ Override</span>
+            </button>
+            <span id="ticketDecisionToast" class="text-[11px] text-emerald-400 font-mono ml-auto hidden font-bold">✓ Decision Saved</span>
+          </div>
+        </div>
+
+        <!-- Clinical Reason Narrative -->
+        <div class="space-y-2 mb-4" id="reasonsContainer">
+          <p class="text-sm text-slate-400 italic">Select a preset above or enter drugs to begin deterministic triage.</p>
+        </div>
+
+        <!-- AI Agent Grounded Synthesis Narrative Panel -->
+        <div id="agentTracePanel" class="hidden mb-4 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs">
+          <div class="flex items-center justify-between mb-2">
+            <span class="font-bold text-cyan-300 flex items-center gap-1.5 uppercase tracking-wider text-[11px]">
+              <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+              AI Agent Reasoning Trace & Graph Grounding
+            </span>
+            <span id="agentTraceModeBadge" class="px-2 py-0.5 rounded text-[10px] font-mono bg-cyan-950 text-cyan-300 border border-cyan-800">DETERMINISTIC_NLP_FALLBACK</span>
+          </div>
+          <div id="clinicalNarrativeText" class="font-mono text-[11px] text-slate-300 bg-slate-950 p-2.5 rounded-lg border border-slate-800/80 mb-2 whitespace-pre-wrap max-h-48 overflow-y-auto">
+          </div>
+        </div>
+
+        <!-- ACB Burden Meter -->
+        <div class="pt-4 border-t border-slate-800/80">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <span>🧠</span> Anticholinergic Cognitive Burden (ACB):
+            </span>
+            <span id="acbScoreDisplay" class="text-sm font-bold font-mono text-slate-400">Total: 0.0</span>
+          </div>
+          <div class="w-full h-3 rounded-full bg-slate-800 overflow-hidden relative">
+            <div id="acbProgressBar" class="h-full bg-emerald-500 transition-all duration-500 rounded-full" style="width: 0%"></div>
+          </div>
+          <div class="flex justify-between text-[10px] text-slate-500 mt-1 font-mono">
+            <span>0 (None)</span>
+            <span>1-2 (Mild)</span>
+            <span class="text-rose-400 font-bold">≥ 3 (Delirium/Fall Risk per Boustani '08)</span>
+            <span>6+</span>
+          </div>
+          <div id="acbBreakdownContainer" class="mt-2 flex flex-wrap gap-1.5"></div>
+        </div>
+      </div>
+
+      <!-- Panel 3: Clinical Conflicts & Swaps Card -->
+      <div id="findingsCard" class="glass-panel rounded-2xl p-5 shadow-xl border border-slate-800">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+          <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+          </svg>
+          CYP Enzyme Bottlenecks & Safe Swaps
+        </h3>
+        
+        <div id="cypConflictsContainer" class="space-y-2 mb-3">
+          <p class="text-xs text-slate-500">No CYP enzyme conflicts detected.</p>
+        </div>
+
+        <div id="swapsContainer" class="pt-3 border-t border-slate-800/80">
+          <h4 class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <span class="text-emerald-400">🔄</span>
+            Graph Recommended Constraint Swaps (ACB ≤ 1 & 0 CYP Conflicts):
+          </h4>
+          <div id="swapsList" class="space-y-2">
+            <p class="text-xs text-slate-500">No active swaps required.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ================= RIGHT COLUMN: INTERACTIVE VIS.JS / CANVAS SUBGRAPH ================= -->
+    <div class="lg:col-span-7 flex flex-col gap-4">
+      
+      <!-- Graph Canvas Container -->
+      <div class="glass-panel rounded-2xl p-4 shadow-2xl border border-slate-800 flex flex-col h-auto min-h-[660px]">
+        
+        <!-- Graph Header & Toolbar -->
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-slate-800">
+          <div class="flex items-center gap-2.5">
+            <div class="w-3 h-3 rounded-full bg-cyan-500"></div>
+            <h2 class="text-sm font-bold tracking-tight text-slate-200">
+              FalkorDB Subgraph Topology
+            </h2>
+            <span id="graphStatsBadge" class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+              0 Nodes • 0 Edges
+            </span>
+            <button type="button" id="rendererBadge" onclick="toggleRenderer()" title="Click to toggle between Vis.js Network and HTML5 Canvas renderer" class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 text-cyan-400 border border-cyan-800 cursor-pointer transition-colors">
+              Initializing...
+            </button>
+          </div>
+
+          <!-- Controls -->
+          <div class="flex items-center gap-1.5">
+            <button onclick="networkFit()" title="Fit View" class="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 transition-colors flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+              <span>Fit</span>
+            </button>
+            <button onclick="networkZoom(1.3)" title="Zoom In" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 transition-colors font-bold">
+              +
+            </button>
+            <button onclick="networkZoom(0.7)" title="Zoom Out" class="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 transition-colors font-bold">
+              -
+            </button>
+            <button onclick="togglePhysics()" id="btnTogglePhysics" title="Toggle Physics" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 transition-colors flex items-center gap-1 font-mono">
+              Physics: ON
+            </button>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 mb-2 px-1">
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded bg-blue-900 border border-blue-400"></span> Drug Node
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded bg-red-950 border border-red-500"></span> Conflict / High Risk
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rotate-45 bg-amber-900 border border-amber-400"></span> CYP Enzyme
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-purple-900 border border-purple-400"></span> ACB Score
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rotate-45 bg-rose-900 border border-rose-400"></span> Pharmacist Ticket
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded bg-emerald-950 border border-emerald-400 border-dashed"></span> Safe Swap
+          </span>
+        </div>
+
+        <!-- Graph Canvas Wrapper with EXPLICIT HEIGHT (520px) -->
+        <div id="graphCanvasWrapper" style="height: 520px; min-height: 520px; width: 100%; position: relative;" class="w-full bg-slate-950/95 rounded-xl border border-slate-800/80 relative overflow-hidden">
+          
+          <!-- Vis.js Dedicated Container -->
+          <div id="visNetwork" style="width: 100%; height: 520px; position: absolute; inset: 0;"></div>
+
+          <!-- Native HTML5 Canvas Fallback (Shield Safe) -->
+          <canvas id="fallbackCanvas" style="display: none; width: 100%; height: 520px; position: absolute; inset: 0;" class="w-full h-full"></canvas>
+          
+          <!-- Empty State Overlay (Sibling of canvas/vis, immune to container overwriting) -->
+          <div id="graphEmptyState" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 pointer-events-none">
+            <div class="w-16 h-16 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-center mb-3 text-slate-600">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+              </svg>
+            </div>
+            <h4 class="text-sm font-semibold text-slate-400 mb-1">Graph Canvas Awaiting Data</h4>
+            <p class="text-xs text-slate-500 max-w-sm">Click one of the Hero Case presets above to visualize FalkorDB's live topology.</p>
+          </div>
+        </div>
+
+        <!-- Clicked Node Inspector Drawer -->
+        <div id="nodeInspectorCard" class="mt-3 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 text-xs hidden shadow-lg">
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="font-bold text-slate-200 flex items-center gap-1.5">
+              <span>🔍</span> Node Inspector: <span id="inspectNodeName" class="text-cyan-400 font-mono text-sm"></span>
+            </span>
+            <span id="inspectNodeType" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 font-mono border border-slate-700"></span>
+          </div>
+          <div id="inspectNodeDetails" class="text-slate-400 text-[11px] leading-relaxed"></div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- ================= BOTTOM DRAWER: DETERMINISTIC GRAPH RAG & TICKET TRACE ================= -->
+  <section class="border-t border-slate-800 bg-slate-900/95 backdrop-blur px-5 py-4 max-w-[1920px] w-full mx-auto">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-4">
+        <h3 class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+          <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+          </svg>
+          Deterministic Graph RAG & Ticket Trace
+        </h3>
+        
+        <!-- Tab Buttons -->
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+          <button onclick="switchTraceTab('ticket')" id="tabBtnTicket" class="px-3 py-1 rounded font-medium transition-colors bg-slate-800 text-cyan-300 border border-slate-700">
+            Pharmacist Ticket State
+          </button>
+          <button onclick="switchTraceTab('agent')" id="tabBtnAgent" class="px-3 py-1 rounded font-medium transition-colors text-slate-400 hover:text-slate-200">
+            AI Agent Trace (3-Step Loop)
+          </button>
+          <button onclick="switchTraceTab('resolution')" id="tabBtnResolution" class="px-3 py-1 rounded font-medium transition-colors text-slate-400 hover:text-slate-200">
+            rapidfuzz Entity Resolution
+          </button>
+          <button onclick="switchTraceTab('cypher')" id="tabBtnCypher" class="px-3 py-1 rounded font-medium transition-colors text-slate-400 hover:text-slate-200">
+            Decoupled Cypher Queries
+          </button>
+        </div>
+      </div>
+      <span class="text-[11px] text-slate-500 font-mono hidden md:inline">
+        Zero Dynamic Cypher • Parameterized Execution Only
+      </span>
+    </div>
+
+    <!-- Tab Content 1: Ticket -->
+    <div id="tabContentTicket" class="p-4 rounded-xl bg-slate-950 border border-slate-800/80 font-mono text-xs">
+      <div id="ticketTraceDetails" class="text-slate-400">
+        No pharmacist ticket created for current regimen. A state mutation occurs when interaction is detected or ACB > 2.
+      </div>
+    </div>
+
+    <!-- Tab Content 4: AI Agent Trace -->
+    <div id="tabContentAgent" class="hidden p-4 rounded-xl bg-slate-950 border border-slate-800/80 font-mono text-xs space-y-3 overflow-x-auto max-h-[300px]">
+      <div id="agentTraceList" class="space-y-2">
+        <p class="text-slate-500">Run a triage query or clinical note to inspect the 3-step AI agent reasoning loop.</p>
+      </div>
+    </div>
+
+    <!-- Tab Content 2: rapidfuzz Resolution -->
+    <div id="tabContentResolution" class="hidden p-4 rounded-xl bg-slate-950 border border-slate-800/80 font-mono text-xs overflow-x-auto">
+      <div id="resolutionTraceList" class="space-y-2">
+        <p class="text-slate-500">Run a triage query to inspect rapidfuzz deterministic resolution scores.</p>
+      </div>
+    </div>
+
+    <!-- Tab Content 3: Cypher Query Trace -->
+    <div id="tabContentCypher" class="hidden p-4 rounded-xl bg-slate-950 border border-slate-800/80 font-mono text-xs space-y-3 overflow-x-auto max-h-[300px]">
+      <div id="cypherTraceList" class="space-y-3">
+        <p class="text-slate-500">No Cypher queries executed yet.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= JAVASCRIPT APPLICATION LOGIC ================= -->
+  <script>
+    // State management
+    let currentRegimen = [];
+    let network = null;
+    let networkData = { nodes: null, edges: null };
+    let canvasRenderer = null;
+    let activeRenderer = 'vis'; // 'vis' | 'canvas'
+    let physicsEnabled = true;
+    let availableDrugs = [];
+    let lastTriageResult = null;
+
+    // Hero Case Presets
+    const HERO_CASES = {
+      1: {
+        title: "Hero Case 1: CYP2D6 Prodrug Blockade",
+        drugs: ["Fluoxetine", "Codeine"]
+      },
+      2: {
+        title: "Hero Case 2: Indian FDC Hidden ACB Stacking",
+        drugs: ["Solvin Cold", "Amitriptyline", "Oxybutynin"]
+      },
+      3: {
+        title: "Hero Case 3: CYP2C19 Antiplatelet Failure",
+        drugs: ["Omeprazole", "Clopidogrel"]
+      },
+      4: {
+        title: "Hero Case 4: ISMP LASA Near-Miss Guardrail",
+        drugs: ["Hydralizine", "Tramadol"]
+      },
+      5: {
+        title: "Hero Case 5: Zero-Trust Unknown Drug",
+        drugs: ["Lecanemab", "Fluoxetine"]
+      }
+    };
+
+    // ================= DUAL RENDERER: HTML5 CANVAS GRAPH RENDERER (SHIELD-SAFE) =================
+    class CanvasGraphRenderer {
+      constructor(canvasElement, onNodeClick) {
+        this.canvas = canvasElement;
+        this.ctx = canvasElement.getContext('2d');
+        this.onNodeClick = onNodeClick;
+        this.nodes = [];
+        this.edges = [];
+        this.nodeMap = new Map();
+        this.scale = 1.0;
+        this.panX = 0;
+        this.panY = 0;
+        this.isDragging = false;
+        this.dragNode = null;
+        this.isPanning = false;
+        this.lastMouse = { x: 0, y: 0 };
+        this.mouseDownPos = { x: 0, y: 0 };
+        this.initEvents();
+      }
+
+      initEvents() {
+        const c = this.canvas;
+        c.addEventListener('mousedown', (e) => this.onMouseDown(e));
+        window.addEventListener('mousemove', (e) => this.onMouseMove(e));
+        window.addEventListener('mouseup', (e) => this.onMouseUp(e));
+        c.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+      }
+
+      getMousePos(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+          x: (e.clientX - rect.left),
+          y: (e.clientY - rect.top)
+        };
+      }
+
+      toWorld(screenPos) {
+        return {
+          x: (screenPos.x - this.panX) / this.scale,
+          y: (screenPos.y - this.panY) / this.scale
+        };
+      }
+
+      onMouseDown(e) {
+        const m = this.getMousePos(e);
+        this.mouseDownPos = { ...m };
+        const world = this.toWorld(m);
+        const hit = this.hitTest(world.x, world.y);
+        if (hit) {
+          this.isDragging = true;
+          this.dragNode = hit;
+        } else {
+          this.isPanning = true;
+        }
+        this.lastMouse = m;
+      }
+
+      onMouseMove(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) {
+          if (!this.isDragging && !this.isPanning) return;
+        }
+        const m = this.getMousePos(e);
+        const dx = m.x - this.lastMouse.x;
+        const dy = m.y - this.lastMouse.y;
+
+        if (this.isDragging && this.dragNode) {
+          this.dragNode.x += dx / this.scale;
+          this.dragNode.y += dy / this.scale;
+          this.draw();
+        } else if (this.isPanning) {
+          this.panX += dx;
+          this.panY += dy;
+          this.draw();
+        } else {
+          const world = this.toWorld(m);
+          const hit = this.hitTest(world.x, world.y);
+          this.canvas.style.cursor = hit ? 'pointer' : 'default';
+        }
+        this.lastMouse = m;
+      }
+
+      onMouseUp(e) {
+        const m = this.getMousePos(e);
+        const dist = Math.hypot(m.x - this.mouseDownPos.x, m.y - this.mouseDownPos.y);
+        if (dist < 5 && this.dragNode && this.onNodeClick) {
+          this.onNodeClick(this.dragNode.rawNode);
+        }
+        this.isDragging = false;
+        this.dragNode = null;
+        this.isPanning = false;
+      }
+
+      onWheel(e) {
+        e.preventDefault();
+        const m = this.getMousePos(e);
+        const zoom = e.deltaY < 0 ? 1.15 : 0.85;
+        const newScale = Math.max(0.4, Math.min(3.0, this.scale * zoom));
+        
+        // Zoom towards mouse
+        this.panX = m.x - (m.x - this.panX) * (newScale / this.scale);
+        this.panY = m.y - (m.y - this.panY) * (newScale / this.scale);
+        this.scale = newScale;
+        this.draw();
+      }
+
+      hitTest(wx, wy) {
+        for (let i = this.nodes.length - 1; i >= 0; i--) {
+          const n = this.nodes[i];
+          const halfW = (n.w || 70) / 2;
+          const halfH = (n.h || 40) / 2;
+          if (wx >= n.x - halfW && wx <= n.x + halfW && wy >= n.y - halfH && wy <= n.y + halfH) {
+            return n;
+          }
+        }
+        return null;
+      }
+
+      setData(nodesData, edgesData) {
+        if (!this.canvas) return;
+        this.canvas.style.display = 'block';
+        const w = this.canvas.offsetWidth || this.canvas.parentElement?.offsetWidth || 700;
+        const h = this.canvas.offsetHeight || this.canvas.parentElement?.offsetHeight || 520;
+
+        // Retina display scaling
+        const dpr = window.devicePixelRatio || 1;
+        this.canvas.width = w * dpr;
+        this.canvas.height = h * dpr;
+        if (this.ctx.resetTransform) {
+          this.ctx.resetTransform();
+          this.ctx.scale(dpr, dpr);
+        } else {
+          this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+
+        this.scale = 1.0;
+        this.panX = 0;
+        this.panY = 0;
+        this.nodes = [];
+        this.edges = [];
+        this.nodeMap.clear();
+
+        // Separate nodes by group for clean column layout
+        const fdcBrands = nodesData.filter(n => n.group === 'brand_fdc');
+        const drugs = nodesData.filter(n => n.group === 'drug');
+        const enzymes = nodesData.filter(n => n.group === 'enzyme');
+        const acbs = nodesData.filter(n => n.group === 'acb');
+        const tickets = nodesData.filter(n => n.group === 'ticket');
+        const swaps = nodesData.filter(n => n.group === 'swap');
+        const unmapped = nodesData.filter(n => n.group === 'unmapped');
+
+        const assignPos = (list, posX, startY, minGapPx, defW, defH) => {
+          list.forEach((n, idx) => {
+            const posY = startY + idx * minGapPx;
+            const wrappedNode = {
+              id: n.id,
+              x: posX,
+              y: posY,
+              w: defW,
+              h: defH,
+              rawNode: n
+            };
+            this.nodes.push(wrappedNode);
+            this.nodeMap.set(n.id, wrappedNode);
+          });
+        };
+
+        const minVerticalGap = 105;
+        const hasFdc = fdcBrands.length > 0;
+        const colFdcX = w * 0.12;
+        const colDrugX = hasFdc ? w * 0.35 : w * 0.22;
+        const colEnzymeX = w * 0.60;
+        const colAcbX = w * 0.86;
+
+        assignPos(fdcBrands, colFdcX, 80, minVerticalGap, 160, 56);
+        assignPos(drugs, colDrugX, 80, minVerticalGap, 160, 56);
+        assignPos(enzymes, colEnzymeX, 90, minVerticalGap, 120, 52);
+        assignPos(acbs, colAcbX, 90, minVerticalGap, 85, 52);
+
+        const bottomY = Math.max(h * 0.80, 80 + Math.max(drugs.length, enzymes.length, acbs.length) * minVerticalGap + 40);
+        assignPos(tickets, colDrugX, bottomY, minVerticalGap, 160, 48);
+        assignPos(swaps, colEnzymeX, bottomY, minVerticalGap, 140, 46);
+        assignPos(unmapped, w * 0.50, 180, minVerticalGap, 180, 60);
+
+        // Bind edges
+        edgesData.forEach(e => {
+          const fromNode = this.nodeMap.get(e.from);
+          const toNode = this.nodeMap.get(e.to);
+          if (fromNode && toNode) {
+            this.edges.push({
+              from: fromNode,
+              to: toNode,
+              rawEdge: e
+            });
+          }
+        });
+
+        this.draw();
+      }
+
+      draw() {
+        const w = this.canvas.offsetWidth || 700;
+        const h = this.canvas.offsetHeight || 520;
+        const ctx = this.ctx;
+
+        ctx.save();
+        ctx.clearRect(0, 0, w, h);
+
+        // Grid background dots
+        ctx.fillStyle = '#070b14';
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+        const dotGap = 24;
+        for (let x = (this.panX % dotGap); x < w; x += dotGap) {
+          for (let y = (this.panY % dotGap); y < h; y += dotGap) {
+            ctx.fillRect(x, y, 1.5, 1.5);
+          }
+        }
+
+        // Apply pan and zoom
+        ctx.translate(this.panX, this.panY);
+        ctx.scale(this.scale, this.scale);
+
+        // Draw Edges
+        this.edges.forEach(e => {
+          this.drawEdge(e);
+        });
+
+        // Draw Nodes
+        this.nodes.forEach(n => {
+          this.drawNode(n);
+        });
+
+        ctx.restore();
+      }
+
+      drawEdge(e) {
+        const ctx = this.ctx;
+        const f = e.from;
+        const t = e.to;
+        const raw = e.rawEdge;
+
+        let strokeCol = (raw.color && raw.color.color) || '#64748b';
+        let isDashed = Boolean(raw.dashes);
+
+        ctx.save();
+        ctx.strokeStyle = strokeCol;
+        ctx.lineWidth = raw.width || 2;
+        if (isDashed) {
+          ctx.setLineDash([4, 4]);
+        } else {
+          ctx.setLineDash([]);
+        }
+
+        // Compute angle and intersection point
+        const angle = Math.atan2(t.y - f.y, t.x - f.x);
+        const targetRadius = (t.w || 60) / 2;
+        const startRadius = (f.w || 60) / 2;
+
+        const startX = f.x + Math.cos(angle) * (startRadius * 0.7);
+        const startY = f.y + Math.sin(angle) * (startRadius * 0.7);
+        const endX = t.x - Math.cos(angle) * (targetRadius * 0.7);
+        const endY = t.y - Math.sin(angle) * (targetRadius * 0.7);
+
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+
+        // Arrowhead
+        ctx.setLineDash([]);
+        ctx.fillStyle = strokeCol;
+        const arrowLen = 9;
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(
+          endX - arrowLen * Math.cos(angle - Math.PI / 6),
+          endY - arrowLen * Math.sin(angle - Math.PI / 6)
+        );
+        ctx.lineTo(
+          endX - arrowLen * Math.cos(angle + Math.PI / 6),
+          endY - arrowLen * Math.sin(angle + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fill();
+
+        // Edge label pill
+        if (raw.label) {
+          const midX = (startX + endX) / 2;
+          const midY = (startY + endY) / 2;
+          ctx.font = '10px "JetBrains Mono", monospace';
+          const textMetrics = ctx.measureText(raw.label);
+          const pillW = textMetrics.width + 12;
+          const pillH = 16;
+
+          ctx.fillStyle = '#0b1120';
+          ctx.strokeStyle = strokeCol;
+          ctx.lineWidth = 1;
+          this.roundRect(ctx, midX - pillW / 2, midY - pillH / 2, pillW, pillH, 4, true, true);
+
+          ctx.fillStyle = (raw.font && raw.font.color) || '#f1f5f9';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(raw.label, midX, midY);
+        }
+
+        ctx.restore();
+      }
+
+      drawNode(n) {
+        const ctx = this.ctx;
+        const raw = n.rawNode;
+        const x = n.x;
+        const y = n.y;
+        const group = raw.group || 'drug';
+
+        ctx.save();
+
+        if (group === 'brand_fdc') {
+          ctx.fillStyle = '#7c2d12';
+          ctx.strokeStyle = '#fb923c';
+          ctx.lineWidth = 2;
+          this.roundRect(ctx, x - 80, y - 28, 160, 56, 10, true, true);
+
+          const lines = (raw.label || "").split('\n');
+          ctx.fillStyle = '#ffedd5';
+          ctx.font = 'bold 11.5px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(lines[0] || "", x, y - 8);
+
+          ctx.fillStyle = '#fed7aa';
+          ctx.font = '9.5px "JetBrains Mono", monospace';
+          ctx.fillText(lines[1] || "[Indian FDC Brand]", x, y + 8);
+
+          if (lines[2]) {
+            ctx.fillStyle = '#f97316';
+            ctx.font = '8.5px Inter, sans-serif';
+            ctx.fillText(lines[2], x, y + 21);
+          }
+
+        } else if (group === 'drug') {
+          const isFlagged = raw.color && raw.color.border === '#ef4444';
+          const isLasa = raw.color && raw.color.border === '#f59e0b';
+          const bgCol = isFlagged ? '#450a0a' : (isLasa ? '#451a03' : '#0f172a');
+          const borderCol = isFlagged ? '#ef4444' : (isLasa ? '#f59e0b' : '#38bdf8');
+
+          ctx.fillStyle = bgCol;
+          ctx.strokeStyle = borderCol;
+          ctx.lineWidth = 2;
+          this.roundRect(ctx, x - 80, y - 28, 160, 56, 10, true, true);
+
+          // Lines
+          const lines = (raw.label || "").split('\n');
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 12px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(lines[0] || "", x, y - 8);
+
+          ctx.fillStyle = borderCol;
+          ctx.font = '10px Inter, sans-serif';
+          ctx.fillText(lines[1] || "", x, y + 8);
+
+          if (lines[2]) {
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '9px "JetBrains Mono", monospace';
+            ctx.fillText(lines[2], x, y + 21);
+          }
+
+        } else if (group === 'enzyme') {
+          // Hexagon
+          const r = 28;
+          ctx.fillStyle = '#78350f';
+          ctx.strokeStyle = '#f59e0b';
+          ctx.lineWidth = 2;
+          this.drawPolygon(ctx, x, y, 6, r);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#fef3c7';
+          ctx.font = 'bold 12px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          const lines = (raw.label || "").split('\n');
+          ctx.fillText(lines[0] || "", x, y - 2);
+          ctx.font = '9px Inter, sans-serif';
+          ctx.fillStyle = '#fde68a';
+          ctx.fillText(lines[1] || "[CYP Enzyme]", x, y + 11);
+
+        } else if (group === 'acb') {
+          // Circle
+          const isHigh = raw.color && raw.color.border === '#ec4899';
+          ctx.fillStyle = isHigh ? '#831843' : '#581c87';
+          ctx.strokeStyle = isHigh ? '#ec4899' : '#c084fc';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x, y, 28, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          const lines = (raw.label || "").split('\n');
+          ctx.fillText(lines[0] || "", x, y - 4);
+          ctx.font = '8px Inter, sans-serif';
+          ctx.fillStyle = '#f5d0fe';
+          ctx.fillText(lines[1] || "", x, y + 10);
+
+        } else if (group === 'ticket') {
+          // Rotated Diamond
+          ctx.fillStyle = '#991b1b';
+          ctx.strokeStyle = '#f87171';
+          ctx.lineWidth = 2;
+          this.roundRect(ctx, x - 75, y - 22, 150, 44, 8, true, true);
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 10px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          const lines = (raw.label || "").split('\n');
+          ctx.fillText(lines[0] || "📋 PHARMACIST TICKET", x, y - 5);
+          ctx.fillStyle = '#fecaca';
+          ctx.font = '10px "JetBrains Mono", monospace';
+          ctx.fillText(lines[1] || "", x, y + 10);
+
+        } else if (group === 'swap') {
+          ctx.fillStyle = '#064e3b';
+          ctx.strokeStyle = '#34d399';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 4]);
+          this.roundRect(ctx, x - 65, y - 20, 130, 40, 6, true, true);
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = '#ecfdf5';
+          ctx.font = 'bold 10.5px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          const lines = (raw.label || "").split('\n');
+          ctx.fillText(lines[0] || "🔄 Safe Swap", x, y - 4);
+          ctx.font = '9px "JetBrains Mono", monospace';
+          ctx.fillStyle = '#6ee7b7';
+          ctx.fillText(lines[1] || "", x, y + 9);
+
+        } else if (group === 'unmapped') {
+          ctx.fillStyle = '#1e1b4b';
+          ctx.strokeStyle = '#a855f7';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 4]);
+          this.roundRect(ctx, x - 85, y - 26, 170, 52, 8, true, true);
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = '#f3e8ff';
+          ctx.font = 'bold 11px Inter, sans-serif';
+          ctx.textAlign = 'center';
+          const lines = (raw.label || "").split('\n');
+          ctx.fillText(lines[0] || "⛔ Unmapped Drug", x, y - 6);
+          ctx.fillStyle = '#c084fc';
+          ctx.font = '9px "JetBrains Mono", monospace';
+          ctx.fillText(lines[1] || "[UNKNOWN COVERAGE]", x, y + 8);
+        }
+
+        ctx.restore();
+      }
+
+      roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x, y, width, height, radius);
+        } else {
+          ctx.moveTo(x + radius, y);
+          ctx.lineTo(x + width - radius, y);
+          ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+          ctx.lineTo(x + width, y + height - radius);
+          ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+          ctx.lineTo(x + radius, y + height);
+          ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+          ctx.lineTo(x, y + radius);
+          ctx.quadraticCurveTo(x, y, x + radius, y);
+        }
+        ctx.closePath();
+        if (fill) ctx.fill();
+        if (stroke) ctx.stroke();
+      }
+
+      drawPolygon(ctx, x, y, sides, radius) {
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+          const a = (i * 2 * Math.PI) / sides - Math.PI / 2;
+          const px = x + radius * Math.cos(a);
+          const py = y + radius * Math.sin(a);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+      }
+    }
+
+    // ================= INITIALIZATION =================
+    window.addEventListener('DOMContentLoaded', async () => {
+      initGraphRenderers();
+      await fetchAvailableDrugs();
+      checkBackendHealth();
+      
+      // Auto-load Hero Case 1 as the opening demonstration
+      loadHeroPreset(1);
+    });
+
+    function initGraphRenderers() {
+      const container = document.getElementById('visNetwork');
+      const fallbackCanvas = document.getElementById('fallbackCanvas');
+      const rendererBadge = document.getElementById('rendererBadge');
+
+      // Initialize HTML5 Canvas Renderer
+      if (fallbackCanvas) {
+        canvasRenderer = new CanvasGraphRenderer(fallbackCanvas, (rawNode) => {
+          showNodeInspector(rawNode);
+        });
+      }
+
+      // Check if Vis.js Network is loaded and valid
+      if (typeof vis !== 'undefined' && vis.Network && vis.DataSet && container) {
+        try {
+          networkData = {
+            nodes: new vis.DataSet([]),
+            edges: new vis.DataSet([])
+          };
+
+          const options = {
+            nodes: {
+              margin: 10,
+              shadow: { enabled: true, color: 'rgba(0,0,0,0.5)', size: 10, x: 2, y: 4 }
+            },
+            edges: {
+              smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.3 },
+              font: { face: 'JetBrains Mono, monospace', align: 'middle' }
+            },
+            physics: {
+              enabled: true,
+              barnesHut: {
+                gravitationalConstant: -5500,
+                centralGravity: 0.2,
+                springLength: 200,
+                springConstant: 0.035,
+                damping: 0.09,
+                avoidOverlap: 1.0
+              },
+              stabilization: { iterations: 120 }
+            },
+            interaction: { hover: true, tooltipDelay: 100, navigationButtons: false, keyboard: false }
+          };
+
+          network = new vis.Network(container, networkData, options);
+          activeRenderer = 'vis';
+          if (fallbackCanvas) fallbackCanvas.style.display = 'none';
+          if (rendererBadge) {
+            rendererBadge.textContent = 'Renderer: Vis.js Network ⇄';
+            rendererBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 text-cyan-400 border border-cyan-800 cursor-pointer transition-colors';
+          }
+
+          network.on("click", function (params) {
+            if (params.nodes && params.nodes.length > 0) {
+              const nodeId = params.nodes[0];
+              const node = networkData.nodes.get(nodeId);
+              if (node) showNodeInspector(node);
+            } else {
+              document.getElementById('nodeInspectorCard')?.classList?.add('hidden');
+            }
+          });
+          return;
+        } catch (e) {
+          console.warn("Vis.js initialization failed, defaulting to Canvas renderer", e);
+        }
+      }
+
+      // Default/Fallback: Activate Canvas Renderer
+      activeRenderer = 'canvas';
+      if (fallbackCanvas) fallbackCanvas.style.display = 'block';
+      if (rendererBadge) {
+        rendererBadge.textContent = 'Renderer: HTML5 Canvas (Shield-Safe) ⇄';
+        rendererBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800 cursor-pointer transition-colors';
+      }
+    }
+
+    // Toggle between Vis.js Network and HTML5 Canvas Renderer
+    function toggleRenderer() {
+      if (typeof vis === 'undefined' || !vis.Network || !network) {
+        console.warn("Vis.js library is not available in browser. HTML5 Canvas remains active.");
+        const rendererBadge = document.getElementById('rendererBadge');
+        if (rendererBadge) {
+          rendererBadge.textContent = 'Renderer: HTML5 Canvas (Vis.js Blocked) ⇄';
+        }
+        return;
+      }
+      activeRenderer = (activeRenderer === 'vis') ? 'canvas' : 'vis';
+      const rendererBadge = document.getElementById('rendererBadge');
+      const fallbackCanvas = document.getElementById('fallbackCanvas');
+      if (activeRenderer === 'vis') {
+        if (fallbackCanvas) fallbackCanvas.style.display = 'none';
+        if (rendererBadge) {
+          rendererBadge.textContent = 'Renderer: Vis.js Network ⇄';
+          rendererBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 text-cyan-400 border border-cyan-800 cursor-pointer transition-colors';
+        }
+      } else {
+        if (fallbackCanvas) fallbackCanvas.style.display = 'block';
+        if (rendererBadge) {
+          rendererBadge.textContent = 'Renderer: HTML5 Canvas (Shield-Safe) ⇄';
+          rendererBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800 cursor-pointer transition-colors';
+        }
+      }
+      if (lastTriageResult && lastTriageResult.graph_data) {
+        renderGraph(lastTriageResult.graph_data);
+      }
+    }
+
+    // Check health endpoint
+    async function checkBackendHealth() {
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          const data = await res.json();
+          document.getElementById('falkordbStatusText').textContent = data.falkordb_status || 'CONNECTED:6379';
+          document.getElementById('indexedCountText').textContent = (data.indexed_aliases || 10) + ' Drugs';
+        }
+      } catch (e) {
+        document.getElementById('falkordbStatusText').textContent = 'OFFLINE';
+        document.getElementById('falkordbStatusText').className = 'text-rose-400 font-mono';
+      }
+    }
+
+    // Fetch seed drugs for quick chips
+    async function fetchAvailableDrugs() {
+      try {
+        const res = await fetch('/api/drugs');
+        if (res.ok) {
+          const data = await res.json();
+          availableDrugs = data.drugs || [];
+          renderSeedChips();
+        }
+      } catch (e) {
+        console.warn("Could not fetch seed drugs", e);
+      }
+    }
+
+    // Render seed quick-add chips
+    function renderSeedChips() {
+      const container = document.getElementById('seedChipsContainer');
+      container.innerHTML = '';
+      availableDrugs.forEach(d => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'px-2 py-0.5 rounded text-[11px] font-medium bg-slate-800/80 hover:bg-cyan-950/60 border border-slate-700/60 hover:border-cyan-500/50 text-slate-300 hover:text-cyan-200 transition-all';
+        chip.textContent = '+ ' + d.name;
+        chip.onclick = () => addDrug(d.name);
+        container.appendChild(chip);
+      });
+    }
+
+    // Input handlers
+    function handleInputKeydown(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.ctrlKey) {
+          runTriage();
+        } else {
+          const val = e.target.value.trim();
+          if (val) {
+            addDrug(val);
+            e.target.value = '';
+          } else {
+            runTriage();
+          }
+        }
+      } else if (e.key === ',' || e.key === ';') {
+        e.preventDefault();
+        const val = e.target.value.trim();
+        if (val) {
+          addDrug(val);
+          e.target.value = '';
+        }
+      }
+    }
+
+    function addDrug(name) {
+      const clean = name.trim();
+      if (!clean) return;
+      if (!currentRegimen.includes(clean)) {
+        currentRegimen.push(clean);
+        renderTags();
+      }
+    }
+
+    function removeDrug(name) {
+      currentRegimen = currentRegimen.filter(d => d !== name);
+      renderTags();
+    }
+
+    function clearRegimen() {
+      currentRegimen = [];
+      renderTags();
+      resetResultsUI();
+    }
+
+    function renderTags() {
+      const container = document.getElementById('tagContainer');
+      const input = document.getElementById('drugInput');
+      
+      const pills = container.querySelectorAll('.drug-pill');
+      pills.forEach(p => p.remove());
+
+      currentRegimen.forEach(d => {
+        const pill = document.createElement('span');
+        pill.className = 'drug-pill px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 shadow-sm';
+        pill.innerHTML = `
+          <span>💊 ${escapeHtml(d)}</span>
+          <button type="button" onclick="removeDrug('${escapeHtml(d)}')" class="text-slate-400 hover:text-rose-400 transition-colors ml-0.5">
+            &times;
+          </button>
+        `;
+        container.insertBefore(pill, input);
+      });
+    }
+
+    // Global Loading State Manager
+    function setLoading(isLoading) {
+      const btn = document.getElementById('btnRunTriage');
+      const spinner = document.getElementById('btnSpinner');
+      if (btn) btn.disabled = Boolean(isLoading);
+      if (spinner) {
+        if (isLoading) {
+          spinner.classList?.remove('hidden');
+        } else {
+          spinner.classList?.add('hidden');
+        }
+      }
+    }
+
+    // Load one of the 5 hero presets
+    function loadHeroPreset(id) {
+      const preset = HERO_CASES[id];
+      if (!preset) return;
+
+      currentRegimen = [...preset.drugs];
+      renderTags();
+      runTriage();
+    }
+
+    // Execute Clinical Graph Triage
+    async function runTriage() {
+      if (!currentRegimen || currentRegimen.length === 0) {
+        console.warn("Triage skipped: currentRegimen is empty.");
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const res = await fetch('/api/triage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ drugs: currentRegimen })
+        });
+
+        if (!res.ok) {
+          console.error("HTTP error from /api/triage:", res.status);
+        }
+
+        const data = await res.json();
+        lastTriageResult = data;
+        await updateResultsUI(data);
+        updateTraceDrawer(data);
+      } catch (err) {
+        console.error("Triage request failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // Update Dashboard UI with results
+    async function updateResultsUI(data) {
+      if (!data) return;
+
+      // 1. Status Verdict Badge
+      const verdict = data.verdict || "UNKNOWN";
+      const badge = document.getElementById('verdictBadge');
+      if (badge) {
+        if (verdict === "FLAGGED") {
+          badge.className = "px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 bg-rose-950/80 text-rose-300 border-rose-500 shadow-lg shadow-rose-950/50 animate-pulse";
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400"></span> FLAGGED (HIGH RISK)`;
+        } else if (verdict === "AMBIGUOUS") {
+          badge.className = "px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 bg-amber-950/80 text-amber-300 border-amber-500 shadow-lg shadow-amber-950/50";
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> AMBIGUOUS (LASA ALERT)`;
+        } else if (verdict === "UNKNOWN_COVERAGE") {
+          badge.className = "px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 bg-purple-950/80 text-purple-300 border-purple-500 shadow-lg shadow-purple-950/50";
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-purple-400"></span> UNKNOWN COVERAGE (HALTED)`;
+        } else {
+          badge.className = "px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 bg-emerald-950/80 text-emerald-300 border-emerald-500";
+          badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> NO FINDINGS (INDEXED)`;
+        }
+      }
+
+      // 2. Ticket Box
+      const ticketBox = document.getElementById('ticketAlertBox');
+      const ticketIdEl = document.getElementById('ticketIdText');
+      const statusBadge = document.getElementById('ticketStatusBadge');
+      if (data.ticket_id && String(data.ticket_id).startsWith("TICK-")) {
+        ticketBox?.classList?.remove('hidden');
+        if (ticketIdEl) ticketIdEl.textContent = data.ticket_id;
+        if (statusBadge) {
+          statusBadge.textContent = 'PENDING_REVIEW';
+          statusBadge.className = 'px-2.5 py-0.5 rounded-full bg-red-900 text-red-100 font-mono text-[10px] font-bold tracking-wider uppercase border border-red-700';
+        }
+      } else {
+        ticketBox?.classList?.add('hidden');
+      }
+
+      // 3. Reasons Narrative
+      const reasonsContainer = document.getElementById('reasonsContainer');
+      if (reasonsContainer) {
+        reasonsContainer.innerHTML = '';
+        const reasonsList = data.reasons || (data.reason ? [data.reason] : []);
+        if (reasonsList.length > 0) {
+          reasonsList.forEach(r => {
+            const p = document.createElement('div');
+            p.className = 'flex items-start gap-2 text-xs text-slate-200 bg-slate-900/60 p-2.5 rounded-lg border border-slate-800';
+            p.innerHTML = `<span class="text-amber-400 mt-0.5">⚠️</span><span>${escapeHtml(r)}</span>`;
+            reasonsContainer.appendChild(p);
+          });
+        }
+      }
+
+      // 3b. AI Agent Reasoning Trace & Grounded Narrative
+      const agentPanel = document.getElementById('agentTracePanel');
+      const narrativeEl = document.getElementById('clinicalNarrativeText');
+      const modeBadge = document.getElementById('agentTraceModeBadge');
+      if (data.clinical_narrative) {
+        agentPanel?.classList?.remove('hidden');
+        if (narrativeEl) narrativeEl.textContent = data.clinical_narrative;
+        if (modeBadge) {
+          const firstStep = (data.agent_trace && data.agent_trace[0]) || {};
+          const mode = firstStep.details?.extraction_mode || 'GRAPH_GROUNDED';
+          modeBadge.textContent = mode;
+        }
+      } else {
+        agentPanel?.classList?.add('hidden');
+      }
+
+      // 4. ACB Burden Meter
+      const acbSummary = data.acb_summary || { total_score: 0, breakdown: [] };
+      const totalAcb = parseFloat(acbSummary.total_score || 0);
+      const acbDisplay = document.getElementById('acbScoreDisplay');
+      if (acbDisplay) acbDisplay.textContent = `Total: ${totalAcb.toFixed(1)}`;
+      
+      const bar = document.getElementById('acbProgressBar');
+      const percentage = Math.min((totalAcb / 6.0) * 100, 100);
+      if (bar) bar.style.width = percentage + '%';
+
+      if (totalAcb >= 3.0) {
+        if (bar) bar.className = "h-full bg-rose-500 transition-all duration-500 rounded-full shadow-lg shadow-rose-500/50";
+        if (acbDisplay) acbDisplay.className = "text-sm font-bold font-mono text-rose-400 animate-pulse";
+      } else if (totalAcb > 0) {
+        if (bar) bar.className = "h-full bg-amber-500 transition-all duration-500 rounded-full";
+        if (acbDisplay) acbDisplay.className = "text-sm font-bold font-mono text-amber-300";
+      } else {
+        if (bar) bar.className = "h-full bg-emerald-500 transition-all duration-500 rounded-full";
+        if (acbDisplay) acbDisplay.className = "text-sm font-bold font-mono text-emerald-400";
+      }
+
+      // ACB Breakdown chips
+      const acbBreakdownContainer = document.getElementById('acbBreakdownContainer');
+      if (acbBreakdownContainer) {
+        acbBreakdownContainer.innerHTML = '';
+        if (acbSummary.breakdown && acbSummary.breakdown.length > 0) {
+          acbSummary.breakdown.forEach(item => {
+            const score = parseInt(item.score || 0);
+            const badgeCol = score >= 3 ? 'bg-rose-950/80 text-rose-300 border-rose-700/60' : (score > 0 ? 'bg-amber-950/80 text-amber-300 border-amber-700/60' : 'bg-slate-800 text-slate-400 border-slate-700');
+            const chip = document.createElement('span');
+            chip.className = `px-2 py-0.5 rounded text-[11px] font-mono border ${badgeCol}`;
+            chip.textContent = `${item.drug}: ACB ${score}`;
+            acbBreakdownContainer.appendChild(chip);
+          });
+        }
+      }
+
+      // 5. CYP Conflicts Container
+      const cypContainer = document.getElementById('cypConflictsContainer');
+      if (cypContainer) {
+        cypContainer.innerHTML = '';
+        const cypConflicts = data.cyp_conflicts || [];
+        if (cypConflicts.length > 0) {
+          cypConflicts.forEach(c => {
+            const card = document.createElement('div');
+            card.className = 'p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-xs text-slate-200';
+            card.innerHTML = `
+              <div class="flex items-center justify-between font-bold text-rose-300 mb-1">
+                <span class="flex items-center gap-1.5">⚡ Enzyme Inhibition Bottleneck</span>
+                <span class="px-2 py-0.5 rounded bg-rose-900/80 text-rose-100 font-mono text-[10px] uppercase">${escapeHtml(c.inhibitor_strength || 'standard')}</span>
+              </div>
+              <div class="font-mono text-[11px] text-slate-300 mb-1">
+                <strong class="text-white">${escapeHtml(c.inhibitor)}</strong> 
+                <span class="text-rose-400 font-bold">-[INHIBITS ${escapeHtml((c.inhibitor_strength||'').toUpperCase())}]-></span> 
+                <strong class="text-amber-400">${escapeHtml(c.enzyme)}</strong> 
+                <span class="text-cyan-400"><-[SUBSTRATE]-</span> 
+                <strong class="text-white">${escapeHtml(c.substrate)}</strong>
+              </div>
+              <div class="text-[11px] text-slate-400 italic">
+                Literature Source: ${escapeHtml(c.inhibitor_source || 'Flockhart Table 2024')}
+              </div>
+            `;
+            cypContainer.appendChild(card);
+          });
+        } else {
+          cypContainer.innerHTML = '<p class="text-xs text-slate-500">No CYP enzyme conflicts detected.</p>';
+        }
+      }
+
+      // 6. Swaps Container
+      const swapsList = document.getElementById('swapsList');
+      if (swapsList) {
+        swapsList.innerHTML = '';
+        const swaps = data.recommended_swaps || {};
+        const swapKeys = Object.keys(swaps);
+        if (swapKeys.length > 0) {
+          swapKeys.forEach(targetDrug => {
+            const cands = swaps[targetDrug] || [];
+            if (cands.length > 0) {
+              const card = document.createElement('div');
+              card.className = 'p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-xs';
+              let candsHtml = cands.map(c => `
+                <span class="px-2 py-0.5 rounded bg-emerald-900/60 border border-emerald-500/40 text-emerald-200 font-mono font-medium text-[11px]">
+                  ${escapeHtml(c.recommended_swap)} (ACB=${c.new_acb})
+                </span>
+              `).join(' ');
+              card.innerHTML = `
+                <div class="text-slate-300 font-semibold mb-1">Replace Flagged <strong>${escapeHtml(targetDrug)}</strong> with:</div>
+                <div class="flex flex-wrap gap-1.5">${candsHtml}</div>
+              `;
+              swapsList.appendChild(card);
+            }
+          });
+        } else {
+          swapsList.innerHTML = '<p class="text-xs text-slate-500">No active swaps required or available.</p>';
+        }
+      }
+
+      // 7. Render Subgraph (ALWAYS executes, fully isolated)
+      try {
+        let graphData = data.graph_data;
+        if (!graphData || (!graphData.nodes && !graphData.edges) || (graphData.nodes?.length === 0 && currentRegimen.length > 0)) {
+          try {
+            const fbRes = await fetch(`/api/graph-subgraph?drugs=${encodeURIComponent(currentRegimen.join(','))}&ticket_id=${encodeURIComponent(data.ticket_id || '')}`);
+            if (fbRes.ok) {
+              const fetched = await fbRes.json();
+              if (fetched && fetched.nodes && fetched.nodes.length > 0) {
+                graphData = fetched;
+              }
+            }
+          } catch (e) {
+            console.warn("Subgraph fallback fetch failed", e);
+          }
+        }
+        renderGraph(graphData);
+      } catch (graphErr) {
+        console.error("Critical error in renderGraph execution:", graphErr);
+      }
+
+      // 8. Update Bottom Trace Drawer
+      try {
+        updateTraceDrawer(data);
+      } catch (drawerErr) {
+        console.error("Error in updateTraceDrawer execution:", drawerErr);
+      }
+    }
+
+    // Reset UI to initial empty state
+    function resetResultsUI() {
+      const verdictBadge = document.getElementById('verdictBadge');
+      if (verdictBadge) {
+        verdictBadge.className = "px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border flex items-center gap-2 bg-slate-800 text-slate-300 border-slate-700";
+        verdictBadge.innerHTML = `<span>Awaiting Evaluation</span>`;
+      }
+      document.getElementById('ticketAlertBox')?.classList?.add('hidden');
+      const reasonsEl = document.getElementById('reasonsContainer');
+      if (reasonsEl) reasonsEl.innerHTML = '<p class="text-sm text-slate-400 italic">Select a preset above or enter drugs to begin deterministic triage.</p>';
+      const acbScore = document.getElementById('acbScoreDisplay');
+      if (acbScore) acbScore.textContent = 'Total: 0.0';
+      const acbBar = document.getElementById('acbProgressBar');
+      if (acbBar) acbBar.style.width = '0%';
+      const acbChips = document.getElementById('acbBreakdownContainer');
+      if (acbChips) acbChips.innerHTML = '';
+      const cypEl = document.getElementById('cypConflictsContainer');
+      if (cypEl) cypEl.innerHTML = '<p class="text-xs text-slate-500">No CYP enzyme conflicts detected.</p>';
+      const swapsEl = document.getElementById('swapsList');
+      if (swapsEl) swapsEl.innerHTML = '<p class="text-xs text-slate-500">No active swaps required.</p>';
+      
+      if (networkData && networkData.nodes) {
+        networkData.nodes.clear();
+        networkData.edges.clear();
+      }
+      if (canvasRenderer) {
+        canvasRenderer.setData([], []);
+      }
+      document.getElementById('graphEmptyState')?.classList?.remove('hidden');
+      const statsBadge = document.getElementById('graphStatsBadge');
+      if (statsBadge) statsBadge.textContent = '0 Nodes • 0 Edges';
+      document.getElementById('nodeInspectorCard')?.classList?.add('hidden');
+    }
+
+    // Unified Graph Rendering Handler (Vis.js with Canvas Fallback)
+    function renderGraph(graphData) {
+      const emptyState = document.getElementById('graphEmptyState');
+      const statsBadge = document.getElementById('graphStatsBadge');
+      const fallbackCanvas = document.getElementById('fallbackCanvas');
+
+      if (!graphData || (!graphData.nodes && !graphData.edges)) {
+        emptyState?.classList?.remove('hidden');
+        if (statsBadge) statsBadge.textContent = '0 Nodes • 0 Edges';
+        return;
+      }
+
+      const nodes = graphData.nodes || [];
+      const edges = graphData.edges || [];
+
+      if (nodes.length > 0) {
+        emptyState?.classList?.add('hidden');
+      } else {
+        emptyState?.classList?.remove('hidden');
+      }
+
+      if (statsBadge) statsBadge.textContent = `${nodes.length} Nodes • ${edges.length} Edges`;
+
+      // 1. Try Vis.js if active
+      if (activeRenderer === 'vis' && network && networkData && networkData.nodes) {
+        try {
+          if (fallbackCanvas) fallbackCanvas.style.display = 'none';
+
+          networkData.nodes.clear();
+          networkData.edges.clear();
+
+          networkData.nodes.add(nodes);
+          networkData.edges.add(edges);
+
+          network.stabilize();
+          setTimeout(() => {
+            network?.fit({ animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+          }, 150);
+          return;
+        } catch (e) {
+          console.warn("Vis.js render failed, falling back to Canvas renderer", e);
+          activeRenderer = 'canvas';
+        }
+      }
+
+      // 2. HTML5 Canvas Renderer (Shield Safe)
+      if (canvasRenderer) {
+        if (fallbackCanvas) fallbackCanvas.style.display = 'block';
+        const rendererBadge = document.getElementById('rendererBadge');
+        if (rendererBadge) {
+          rendererBadge.textContent = 'Renderer: HTML5 Canvas (Shield-Safe) ⇄';
+          rendererBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-400 border border-emerald-800 cursor-pointer transition-colors';
+        }
+        canvasRenderer.setData(nodes, edges);
+      }
+    }
+
+    // Inspect clicked node
+    function showNodeInspector(node) {
+      if (!node) return;
+      const card = document.getElementById('nodeInspectorCard');
+      card?.classList?.remove('hidden');
+
+      const nameEl = document.getElementById('inspectNodeName');
+      if (nameEl) nameEl.textContent = node.label ? node.label.split('\n')[0] : node.id;
+      const typeEl = document.getElementById('inspectNodeType');
+      if (typeEl) typeEl.textContent = (node.metadata && node.metadata.type) ? node.metadata.type : (node.group || "Entity");
+
+      const details = document.getElementById('inspectNodeDetails');
+      if (details) {
+        if (node.metadata) {
+          let metaHtml = '<div class="grid grid-cols-2 gap-2 mt-1">';
+          for (const [key, val] of Object.entries(node.metadata)) {
+            if (val) {
+              metaHtml += `<div><span class="text-slate-500 font-mono text-[10px] uppercase">${key.replace('_', ' ')}:</span> <span class="text-slate-200 font-medium">${escapeHtml(String(val))}</span></div>`;
+            }
+          }
+          metaHtml += '</div>';
+          details.innerHTML = metaHtml;
+        } else {
+          details.innerHTML = `<p>${escapeHtml(node.title || node.label || "")}</p>`;
+        }
+      }
+    }
+
+    // Focus on Ticket Node in graph
+    function focusTicketNode() {
+      if (!lastTriageResult || !lastTriageResult.ticket_id) return;
+      const ticketNodeId = `ticket_${lastTriageResult.ticket_id}`;
+
+      if (activeRenderer === 'vis' && network && networkData && networkData.nodes) {
+        if (networkData.nodes.get(ticketNodeId)) {
+          network.focus(ticketNodeId, { scale: 1.4, animation: { duration: 800, easingFunction: 'easeInOutQuad' } });
+          network.selectNodes([ticketNodeId]);
+          const node = networkData.nodes.get(ticketNodeId);
+          if (node) showNodeInspector(node);
+        }
+      } else if (canvasRenderer) {
+        const node = canvasRenderer.nodes.find(n => n.id === ticketNodeId);
+        if (node) {
+          canvasRenderer.panX = (canvasRenderer.canvas.offsetWidth / 2) - node.x;
+          canvasRenderer.panY = (canvasRenderer.canvas.offsetHeight / 2) - node.y;
+          canvasRenderer.scale = 1.3;
+          canvasRenderer.draw();
+          showNodeInspector(node.rawNode);
+        }
+      }
+    }
+
+    // Graph Toolbar Controls
+    function networkFit() {
+      if (activeRenderer === 'vis' && network) {
+        network.fit({ animation: { duration: 400 } });
+      } else if (canvasRenderer) {
+        canvasRenderer.scale = 1.0;
+        canvasRenderer.panX = 0;
+        canvasRenderer.panY = 0;
+        canvasRenderer.draw();
+      }
+    }
+
+    function networkZoom(factor) {
+      if (activeRenderer === 'vis' && network) {
+        const scale = network.getScale() * factor;
+        network.moveTo({ scale: scale, animation: { duration: 300 } });
+      } else if (canvasRenderer) {
+        canvasRenderer.scale = Math.max(0.4, Math.min(3.0, canvasRenderer.scale * factor));
+        canvasRenderer.draw();
+      }
+    }
+
+    function togglePhysics() {
+      physicsEnabled = !physicsEnabled;
+      if (activeRenderer === 'vis' && network) {
+        network.setOptions({ physics: { enabled: physicsEnabled } });
+      }
+      const btn = document.getElementById('btnTogglePhysics');
+      if (btn) {
+        btn.textContent = `Physics: ${physicsEnabled ? 'ON' : 'OFF'}`;
+        btn.className = physicsEnabled 
+          ? 'px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs border border-slate-700 transition-colors flex items-center gap-1 font-mono'
+          : 'px-2.5 py-1 rounded-lg bg-amber-950/80 hover:bg-amber-900 text-amber-200 text-xs border border-amber-600 transition-colors flex items-center gap-1 font-mono';
+      }
+    }
+
+    // Bottom Drawer Tabs
+    function switchTraceTab(tab) {
+      const tabs = ['ticket', 'agent', 'resolution', 'cypher'];
+      tabs.forEach(t => {
+        const btn = document.getElementById(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
+        const content = document.getElementById(`tabContent${t.charAt(0).toUpperCase() + t.slice(1)}`);
+        if (t === tab) {
+          if (btn) btn.className = "px-3 py-1 rounded font-medium transition-colors bg-slate-800 text-cyan-300 border border-slate-700";
+          content?.classList?.remove('hidden');
+        } else {
+          if (btn) btn.className = "px-3 py-1 rounded font-medium transition-colors text-slate-400 hover:text-slate-200";
+          content?.classList?.add('hidden');
+        }
+      });
+    }
+
+    // AI Clinical Note Copilot Functions
+    function insertSampleClinicalNote() {
+      const input = document.getElementById('clinicalNoteInput');
+      if (input) {
+        input.value = "72yo male prescribed Solvin Cold for rhinitis along with Amitriptyline 25mg and Oxybutynin 5mg";
+      }
+    }
+
+    async function runNoteTriage() {
+      const input = document.getElementById('clinicalNoteInput');
+      const note = input ? input.value.trim() : '';
+      if (!note) {
+        console.warn("Clinical note is empty.");
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const res = await fetch('/api/triage', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clinical_note: note })
+        });
+        const data = await res.json();
+        lastTriageResult = data;
+
+        if (data.resolutions && data.resolutions.length > 0) {
+          currentRegimen = data.resolutions.map(r => r.canonical_name || r.query);
+          renderTags();
+        }
+
+        await updateResultsUI(data);
+        updateTraceDrawer(data);
+      } catch (err) {
+        console.error("Clinical note triage failed:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    async function submitTicketDecision(decision) {
+      if (!lastTriageResult || !lastTriageResult.ticket_id) {
+        console.warn("No active ticket to mutate.");
+        return;
+      }
+      const ticketId = lastTriageResult.ticket_id;
+      const toast = document.getElementById('ticketDecisionToast');
+      const badge = document.getElementById('ticketStatusBadge');
+
+      try {
+        const res = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/decision`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: decision,
+            note: `Pharmacist decision: ${decision}`
+          })
+        });
+        if (res.ok) {
+          const result = await res.json();
+          if (badge) {
+            badge.textContent = decision;
+            if (decision === 'APPROVED_SWAP') {
+              badge.className = 'px-2.5 py-0.5 rounded-full bg-emerald-900 text-emerald-100 font-mono text-[10px] font-bold tracking-wider uppercase border border-emerald-600 shadow-sm';
+            } else {
+              badge.className = 'px-2.5 py-0.5 rounded-full bg-amber-900 text-amber-100 font-mono text-[10px] font-bold tracking-wider uppercase border border-amber-600 shadow-sm';
+            }
+          }
+          if (toast) {
+            toast.textContent = `✓ ${decision} Recorded`;
+            toast.classList?.remove('hidden');
+            setTimeout(() => { toast.classList?.add('hidden'); }, 3000);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to update ticket decision", e);
+      }
+    }
+
+    // Update Bottom Trace Drawer content
+    function updateTraceDrawer(data) {
+      if (!data) return;
+
+      // 1. Ticket Tab
+      const ticketContainer = document.getElementById('ticketTraceDetails');
+      if (ticketContainer) {
+        if (data.ticket_id && String(data.ticket_id).startsWith("TICK-")) {
+          ticketContainer.innerHTML = `
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-3">
+                <span class="text-rose-400 font-bold">Node Created:</span>
+                <span class="text-white bg-slate-900 px-2 py-0.5 rounded border border-rose-900">:Ticket { id: '${data.ticket_id}' }</span>
+                <span class="text-slate-400">Status: <strong class="text-amber-400">PENDING_REVIEW</strong></span>
+              </div>
+              <div class="text-slate-300"><span class="text-slate-500">Reason:</span> ${escapeHtml(data.reasons ? data.reasons.join(' | ') : '')}</div>
+              <div class="text-slate-400 text-[11px]"><span class="text-slate-500">Action:</span> Persisted to FalkorDB graph 'polypharmacy_guardian' for pharmacist validation.</div>
+            </div>
+          `;
+        } else {
+          ticketContainer.innerHTML = `
+            <span class="text-slate-500">No state-mutation ticket created. Regimen did not exceed risk thresholds (No CYP conflicts and Total ACB ≤ 2.0).</span>
+          `;
+        }
+      }
+
+      // 1b. AI Agent Trace Tab
+      const agentContainer = document.getElementById('agentTraceList');
+      if (agentContainer) {
+        agentContainer.innerHTML = '';
+        const agentTrace = data.agent_trace || [];
+        if (agentTrace.length > 0) {
+          agentTrace.forEach(step => {
+            const card = document.createElement('div');
+            card.className = 'p-2.5 rounded bg-slate-900 border border-slate-800 text-xs font-mono';
+            const action = step.action || step.tool_call || 'step';
+            card.innerHTML = `
+              <div class="flex items-center justify-between text-cyan-300 font-bold mb-1">
+                <span>Step ${step.step}: ${escapeHtml(action)}</span>
+                <span class="text-[10px] text-slate-500">${escapeHtml(step.timestamp || '')}</span>
+              </div>
+              <pre class="text-[11px] text-slate-300 overflow-x-auto whitespace-pre-wrap">${escapeHtml(JSON.stringify(step, null, 2))}</pre>
+            `;
+            agentContainer.appendChild(card);
+          });
+        } else {
+          agentContainer.innerHTML = '<p class="text-slate-500">No agent reasoning steps recorded.</p>';
+        }
+      }
+
+      // 2. Resolution Tab
+      const resContainer = document.getElementById('resolutionTraceList');
+      if (resContainer) {
+        resContainer.innerHTML = '';
+        const resolutions = data.resolutions || [];
+        if (resolutions.length > 0) {
+          resolutions.forEach(r => {
+            const pass = (r.status !== 'UNKNOWN_COVERAGE');
+            const isLasa = (r.status === 'AMBIGUOUS');
+            const chipClass = isLasa ? 'text-amber-400 bg-amber-950/60 border-amber-800' : (pass ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800' : 'text-purple-400 bg-purple-950/60 border-purple-800');
+            const row = document.createElement('div');
+            row.className = 'p-2 rounded bg-slate-900 border border-slate-800 flex items-center justify-between text-xs font-mono';
+            row.innerHTML = `
+              <div class="flex items-center gap-3">
+                <span class="text-white font-bold">Query: "${escapeHtml(r.query)}"</span>
+                <span>-> Canonical: <strong class="text-cyan-300">${escapeHtml(r.canonical_name || 'NONE')}</strong></span>
+                <span class="text-slate-400">Confidence: <strong>${(r.confidence * 100).toFixed(1)}%</strong></span>
+              </div>
+              <div class="flex items-center gap-2">
+                ${r.lasa_pairs && r.lasa_pairs.length > 0 ? `<span class="text-[10px] text-amber-300 font-sans">LASA: ${escapeHtml(r.lasa_pairs.join(', '))}</span>` : ''}
+                <span class="px-2 py-0.5 rounded text-[10px] border ${chipClass}">${r.status}</span>
+              </div>
+            `;
+            resContainer.appendChild(row);
+          });
+        } else {
+          resContainer.innerHTML = '<p class="text-slate-500">No entity resolutions logged.</p>';
+        }
+      }
+
+      // 3. Cypher Trace Tab
+      const cypherContainer = document.getElementById('cypherTraceList');
+      if (cypherContainer) {
+        cypherContainer.innerHTML = '';
+        const trace = data.cypher_trace || [];
+        if (trace.length > 0) {
+          trace.forEach((t, idx) => {
+            const block = document.createElement('div');
+            block.className = 'p-3 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono';
+            block.innerHTML = `
+              <div class="flex items-center justify-between text-cyan-400 font-bold mb-1">
+                <span>Step ${idx + 1}: ${escapeHtml(t.tool_name)}</span>
+                <span class="text-slate-400 font-normal">Returned Rows: ${t.returned_rows}</span>
+              </div>
+              <pre class="text-slate-300 whitespace-pre-wrap leading-relaxed text-[10.5px] bg-slate-950 p-2 rounded border border-slate-850 mb-1.5">${escapeHtml(t.cypher_query)}</pre>
+              <div class="text-slate-400 text-[10px]">
+                <span class="text-slate-500 font-semibold">Parameters:</span> <code class="text-indigo-300">${escapeHtml(JSON.stringify(t.parameters))}</code>
+              </div>
+            `;
+            cypherContainer.appendChild(block);
+          });
+        } else {
+          cypherContainer.innerHTML = '<p class="text-slate-500">No Cypher queries executed in this run (halted early by deterministic guardrails).</p>';
+        }
+      }
+    }
+
+    // HTML escaping helper
+    function escapeHtml(text) {
+      if (!text) return "";
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>

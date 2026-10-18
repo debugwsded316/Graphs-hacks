@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: polypharmacy-falkordb
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkordb_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: polypharmacy-guardian-app
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - FALKORDB_GRAPH=polypharmacy_guardian
+      - CYPHER_CONFIG_PATH=/app/config/cypher_tools.yaml
+      - DRUGS_CSV_PATH=/app/data/drugs_seed.csv
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    command: >
+      sh -c "python -m app.ingestion && python -m app.server"
+    restart: unless-stopped
+
+volumes:
+  falkordb_data:
+    driver: local
